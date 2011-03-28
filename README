@@ -9,3 +9,8 @@ Where NS stands for nameserver.
 
 To build checkdnssec:
 mvn assembly:assembly
+
+LICENCE
+This software is put in public domain. 
+It's free to share, modify, sell, manipulate, burn, whatever. If you see fit, credit me accordingly. If not, I am fine with that too.
+
