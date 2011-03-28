@@ -3,26 +3,31 @@ package com.danboykis.checkdnssec;
 import org.xbill.DNS.*;
 
 import java.util.Collections;
+import java.util.Iterator;
 
 public final class Querier {
     public DNSKEYRecord ksk = null;
     public DNSKEYRecord zsk = null;
-    public NSRecord ns;
+    public String ns;
 
     private void populateNS(Name n) {
         Record[] nsRecs = new Lookup(n,Type.NS,DClass.IN).run();
         if( nsRecs[0].getType() != Type.NS ) {
             throw new RuntimeException("Cannot query for NS record");
         }
-        ns = (NSRecord)nsRecs[0];
+        ns = ((NSRecord)nsRecs[0]).getTarget().toString();
     }
-    private void populateDNSKEYs(Name n) {
-        Record[] dnsRecs = new Lookup(n,Type.DNSKEY,DClass.IN).run();
-        for( Record r : dnsRecs ) {
-            if( r.getType() == Type.DNSKEY ) {
-                DNSKEYRecord k = (DNSKEYRecord)r;
-                if( k.getFlags() == 256 ) { zsk = k; }
-                if( k.getFlags() == 257 ) { ksk = k; }
+    private void populateDNSKEYs(Name n) throws Exception {
+        RRset[] dnsKeys = queryFor(NameTypePair.of(n.toString(), Type.DNSKEY));
+        if( dnsKeys == null || dnsKeys.length < 1 ) {
+            throw new RuntimeException("Cannot get DNSKEYs for zone!");
+        }
+        for( RRset s : dnsKeys ) {
+            Iterator<DNSKEYRecord> i = s.rrs();
+            while( i.hasNext() ) {
+                DNSKEYRecord r = i.next();
+                if( r.getFlags() == 256 ) { zsk = r; }
+                if( r.getFlags() == 257 ) { ksk = r; }
             }
         }
         if( ksk == null || zsk == null ) {
@@ -30,11 +35,11 @@ public final class Querier {
         }
     }
 
-    public Querier(Name n,Name nsTarget) {
+    public Querier(Name n,String nsTarget) throws Exception {
+        this.ns = nsTarget;
         populateDNSKEYs(n);
-        this.ns = new NSRecord(n,DClass.IN,86400L,nsTarget);
     }
-    public Querier(Name n) {
+    public Querier(Name n) throws Exception {
         populateNS(n);
         populateDNSKEYs(n);
     }
@@ -42,7 +47,7 @@ public final class Querier {
     public RRset[] queryFor(NameTypePair ntp) throws Exception {
         Record r = Record.newRecord(ntp.name, ntp.type, DClass.IN);
         Message query = Message.newQuery(r);
-        SimpleResolver res = new SimpleResolver(ns.getTarget().toString());
+        SimpleResolver res = new SimpleResolver(ns);
         res.setEDNS(0,SimpleResolver.DEFAULT_EDNS_PAYLOADSIZE,Flags.DO, Collections.EMPTY_LIST);
         res.setTCP(true);
         Message response = res.send(query);

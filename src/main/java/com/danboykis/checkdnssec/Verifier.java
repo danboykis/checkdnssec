@@ -16,11 +16,11 @@ public class Verifier
         }
         return args;
     }
-    public Verifier(String[] args) throws TextParseException {
+    public Verifier(String[] args) throws Exception {
         if(args[0].startsWith("NS:")) {
             this.argPairs = parseArgs(Arrays.asList(Arrays.copyOfRange(args,1,args.length)));
-            Name nsTarget = Name.fromString(args[0].split(":")[1]);
-            querier = new Querier(argPairs.get(1).name,nsTarget);
+            String nsTarget = args[0].split(":")[1];
+            querier = new Querier(argPairs.get(0).name,nsTarget);
         }
         else {
             this.argPairs = parseArgs(Arrays.asList(args));
@@ -73,9 +73,11 @@ public class Verifier
             System.out.println("Using: "+key);
             DNSSEC.verify(set,rrsig,key);
             System.out.println("VALID");
+            System.out.println("--------------------------------------");
             return true;
         } catch (DNSSEC.DNSSECException e) {
             System.out.println("!!NOT VALID!!");
+            System.out.println("--------------------------------------");
             return false;
         }
     }
@@ -85,6 +87,7 @@ public class Verifier
         System.out.println(v.querier.ksk);
         System.out.println(v.querier.zsk);
         System.out.println(v.querier.ns);
+        System.out.println("--------------------------------------");
         if( !v.isValidZone() ) {
             System.out.println("!!ZONE IS NOT VALID!!");
         }
