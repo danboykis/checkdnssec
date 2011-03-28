@@ -1,0 +1,2 @@
+This tiny utility queries the zone based on given parameters and verifies the 
+every queried RR set for a valid RRSIG.
