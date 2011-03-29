@@ -3,9 +3,11 @@ verifies every queried RR set for a valid RRSIG.
 
 Suppose I want to verify that nist.gov's SOA, A and MX records have proper RRSIG records.
 
-java -jar checkdnssec-1.0-SNAPSHOT-jar-with-dependencies.jar NS:ns1.nist.gov. nist.gov.:A nist.gov.:SOA nist.gov.:MX
+java -jar checkdnssec-1.0-SNAPSHOT-jar-with-dependencies.jar -z nist.gov. --ns=ns1.nist.gov. -Dnist.gov.:A -Dnist.gov.:SOA -Dnist.gov.:MX
 
-Where NS stands for nameserver.
+-z stands for zone name
+--ns stands for nameserver.
+-D precedes the name-type pair you want to verify
 
 To build checkdnssec:
 mvn assembly:assembly
