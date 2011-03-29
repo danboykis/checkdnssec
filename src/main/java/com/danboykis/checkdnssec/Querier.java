@@ -2,60 +2,130 @@ package com.danboykis.checkdnssec;
 
 import org.xbill.DNS.*;
 
+import java.io.IOException;
+import java.net.UnknownHostException;
 import java.util.Collections;
 import java.util.Iterator;
 
-public final class Querier {
-    public DNSKEYRecord ksk = null;
-    public DNSKEYRecord zsk = null;
-    public String ns;
+public class Querier {
+    public static class Builder {
+        private Name name;
+        private String nsTarget;
+        private Integer port;
 
-    private void populateNS(Name n) {
-        Record[] nsRecs = new Lookup(n,Type.NS,DClass.IN).run();
-        if( nsRecs[0].getType() != Type.NS ) {
-            throw new RuntimeException("Cannot query for NS record");
+        private boolean hasName;
+        private boolean hasNSTarget;
+        private boolean hasPort;
+        public Builder() {}
+
+        public boolean hasZoneName() { return hasName; }
+        public boolean hasNSTarget() { return hasNSTarget; }
+        public boolean hasPort() { return hasPort; }
+
+        public Builder setZoneName(Name zn) {
+            this.name = zn;
+            this.hasName = true;
+            return this;
         }
-        ns = ((NSRecord)nsRecs[0]).getTarget().toString();
-    }
-    private void populateDNSKEYs(Name n) throws Exception {
-        RRset[] dnsKeys = queryFor(NameTypePair.of(n.toString(), Type.DNSKEY));
-        if( dnsKeys == null || dnsKeys.length < 1 ) {
-            throw new RuntimeException("Cannot get DNSKEYs for zone!");
+        public Builder setNameServer(String ns) {
+            this.nsTarget = ns;
+            this.hasNSTarget = true;
+            return this;
         }
-        for( RRset s : dnsKeys ) {
-            Iterator<DNSKEYRecord> i = s.rrs();
-            while( i.hasNext() ) {
-                DNSKEYRecord r = i.next();
-                if( r.getFlags() == 256 ) { zsk = r; }
-                if( r.getFlags() == 257 ) { ksk = r; }
-            }
+
+        public Builder setPort(int p) {
+            this.port = p;
+            hasPort = true;
+            return this;
         }
-        if( ksk == null || zsk == null ) {
-            throw new RuntimeException(String.format("Cannot query for DNSKEY records\nZSK:%s\nKSK:%s",zsk,ksk));
+
+        public Querier build() throws UnknownHostException {
+            if( !hasZoneName() ) { throw new IllegalArgumentException("Name must be set!"); }
+            if( !hasPort() ) { this.port = 53; }
+            if( !hasNSTarget() ) { return new Querier(this.name,this.port); }
+            return new Querier(this.name,this.port,this.nsTarget);
         }
     }
 
-    public Querier(Name n,String nsTarget) throws Exception {
-        this.ns = nsTarget;
-        populateDNSKEYs(n);
-    }
-    public Querier(Name n) throws Exception {
-        populateNS(n);
-        populateDNSKEYs(n);
+    private Name name;
+    private String nsTarget = "";
+    private int port;
+    private SimpleResolver resolver;
+    private KeyHolder keyHolder;
+
+    public static Builder newBuilder() {
+        return new Builder();
     }
 
-    public RRset[] queryFor(NameTypePair ntp) throws Exception {
-        Record r = Record.newRecord(ntp.name, ntp.type, DClass.IN);
-        Message query = Message.newQuery(r);
-        SimpleResolver res = new SimpleResolver(ns);
-        res.setEDNS(0,SimpleResolver.DEFAULT_EDNS_PAYLOADSIZE,Flags.DO, Collections.EMPTY_LIST);
+    public void init() throws UnknownHostException {
+        if( nsTarget.isEmpty() ) {
+            setNsTarget();
+        }
+        initResolver();
+        setDNSKEYs();
+    }
+    private void initResolver() throws UnknownHostException {
+        SimpleResolver res = new SimpleResolver(this.nsTarget);
+        res.setEDNS(0, SimpleResolver.DEFAULT_EDNS_PAYLOADSIZE, Flags.DO, Collections.EMPTY_LIST);
         res.setTCP(true);
-        Message response = res.send(query);
+        res.setPort(this.port);
+        this.resolver = res;
+    }
+
+    private Querier(Name name, int port) throws UnknownHostException {
+        this.name = name;
+        this.port = port;
+        init();
+    }
+    private Querier(Name name, int port, String nsTarget) throws UnknownHostException {
+        this.name = name;
+        this.port = port;
+        this.nsTarget = nsTarget;
+        init();
+    }
+
+    public int getPort() { return port; }
+    public String getNsTarget() { return nsTarget; }
+    public Name getName() { return name; }
+    public KeyHolder getKeyHolder() { return keyHolder; }
+
+
+    public static Message makeQuery(NameTypePair ntp) {
+        return Message.newQuery( Record.newRecord(ntp.name,ntp.type,DClass.IN) );
+    }
+    public RRset[] queryFor(NameTypePair ntp) throws IOException {
+        Message response = resolver.send(makeQuery(ntp));
         if( !response.findRRset(ntp.name,ntp.type) ) {
             throw new RuntimeException(String.format("Didn't get any results for NAME=%s, TYPE=%d",ntp.name,ntp.type));
         }
 
-        RRset[] setsToVerify = response.getSectionRRsets(Section.ANSWER);
-        return setsToVerify;
+        RRset[] responseSets = response.getSectionRRsets(Section.ANSWER);
+        if( responseSets == null || responseSets.length < 1 ) {
+            throw new RuntimeException(String.format("Didn't get any results for NAME=%s, TYPE=%d",ntp.name,ntp.type));
+        }
+        return responseSets;
+    }
+    public void setDNSKEYs() {
+        this.keyHolder = new KeyHolder();
+        NameTypePair ntp = NameTypePair.of(this.getName(),Type.DNSKEY);
+        try {
+            RRset[] dnsKeys = queryFor(ntp);
+            for( RRset s : dnsKeys ) {
+                Iterator<DNSKEYRecord> i = s.rrs();
+                while( i.hasNext() ) {
+                    DNSKEYRecord r = i.next();
+                    keyHolder.put(r);
+                }
+            }
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+    public void setNsTarget() {
+        Record[] nsRecs = new Lookup(this.getName(),Type.NS,DClass.IN).run();
+        if( nsRecs[0].getType() != Type.NS ) {
+            throw new RuntimeException("Cannot query for NS record");
+        }
+        this.nsTarget = ((NSRecord)nsRecs[0]).getTarget().toString();
     }
 }

@@ -10,6 +10,9 @@ public final class NameTypePair {
         name = n;
         type = t;
     }
+    public static NameTypePair of(Name n, int t) {
+            return new NameTypePair(n,t);
+    }
     public static NameTypePair of(String n, int t) {
         try {
             return new NameTypePair(Name.fromString(n),t);

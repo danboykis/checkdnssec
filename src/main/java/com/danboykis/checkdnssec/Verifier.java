@@ -1,31 +1,22 @@
 package com.danboykis.checkdnssec;
 
+import com.danboykis.checkdnssec.cli.CliHandler;
 import org.xbill.DNS.*;
 
-import java.util.*;
+import java.util.Iterator;
+import java.util.List;
 
 public class Verifier
 {
-    private List<NameTypePair> argPairs;
-    private Querier querier;
-    public List<NameTypePair> parseArgs(List<String> argsList) {
-        List<NameTypePair> args = new ArrayList<NameTypePair>(argsList.size());
-        for( String arg : argsList ) {
-            String[] ntp = arg.split(":");
-            args.add(NameTypePair.of(ntp[0], Type.value(ntp[1])));
-        }
-        return args;
-    }
+    List<NameTypePair> argPairs;
+    KeyHolder keyHolder;
+    Querier querier;
+
     public Verifier(String[] args) throws Exception {
-        if(args[0].startsWith("NS:")) {
-            this.argPairs = parseArgs(Arrays.asList(Arrays.copyOfRange(args,1,args.length)));
-            String nsTarget = args[0].split(":")[1];
-            querier = new Querier(argPairs.get(0).name,nsTarget);
-        }
-        else {
-            this.argPairs = parseArgs(Arrays.asList(args));
-            querier = new Querier(argPairs.get(0).name);
-        }
+        CliHandler cliHandler = new CliHandler(args);
+        this.querier = cliHandler.getQuerier();
+        this.argPairs = cliHandler.getNameTypePairs();
+        this.keyHolder = querier.getKeyHolder();
     }
 
     public boolean isValidZone() {
@@ -48,19 +39,18 @@ public class Verifier
     }
 
     public boolean isValidSet(RRset set) {
-        boolean valid = true;
+        boolean valid = false;
         Iterator<RRSIGRecord> sigs = set.sigs();
         while( sigs.hasNext() ) {
             RRSIGRecord sig = sigs.next();
-            if( querier.ksk.getFootprint() == sig.getFootprint() ) {
-                valid = valid && isValid(set, querier.ksk, sig);
-            }
-            else if( querier.zsk.getFootprint() == sig.getFootprint() ) {
-                valid = valid && isValid(set, querier.zsk, sig);
+            if( !keyHolder.containsKey(sig.getFootprint()) ) {
+                System.out.println("WARNING RRSIG DOESN'T MATCH ANY KEYS FOUND!");
+                System.out.println(sig);
+                valid = false;
             }
             else {
-                System.out.println("WARNING RRSIG DOESN'T MATCH KSK OR ZSK!");
-                System.out.println(sig);
+                DNSKEYRecord key = keyHolder.get(sig.getFootprint());
+                valid = isValid(set,key,sig);
             }
         }
         return valid;
@@ -71,7 +61,7 @@ public class Verifier
             System.out.println("Verifying: "+set.getName()+" "+Type.string(set.getType()));
             System.out.println("Against: "+rrsig);
             System.out.println("Using: "+key);
-            DNSSEC.verify(set,rrsig,key);
+            DNSSEC.verify(set, rrsig, key);
             System.out.println("VALID");
             System.out.println("--------------------------------------");
             return true;
@@ -84,9 +74,7 @@ public class Verifier
 
     public static void main( String[] args ) throws Exception {
         Verifier v = new Verifier(args);
-        System.out.println(v.querier.ksk);
-        System.out.println(v.querier.zsk);
-        System.out.println(v.querier.ns);
+        System.out.println(v.keyHolder);
         System.out.println("--------------------------------------");
         if( !v.isValidZone() ) {
             System.out.println("!!ZONE IS NOT VALID!!");
