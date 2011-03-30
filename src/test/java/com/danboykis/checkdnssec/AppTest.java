@@ -1,11 +1,13 @@
 package com.danboykis.checkdnssec;
 
 import com.danboykis.checkdnssec.cli.CliHandler;
-import junit.framework.TestCase;
+import org.junit.Test;
+import static org.junit.Assert.*;
 import org.xbill.DNS.Type;
 
-public class AppTest  extends TestCase
+public class AppTest
 {
+    @Test
     public void testApp()
     {
         try {
@@ -19,7 +21,7 @@ public class AppTest  extends TestCase
             assertTrue(false);
         }
     }
-
+    @Test
     public void testCliHandler() {
         String[] a = new String[]{"-z nist.gov.","--ns=ns1.nist.gov.","-p 53","-Dnist.gov.:SOA"};
         try {
